@@ -6,6 +6,43 @@ report/diff are files, never inlined into the controller's context, and a
 dispatched agent replies with a short structured status. The only thing that
 changes is which engine executes the dispatch.
 
+## Operational notes
+
+### Bootstrapping a task that creates the repo itself
+
+`-w` requires `--workdir` to already be a git repo with a valid `HEAD` --
+it creates the new worktree from the current ref. If a plan's first task is
+itself "create the directory and `git init`," `cursor-dispatch` cannot
+dispatch that step: there is no ref yet to branch a worktree from. Run that
+one bootstrap command directly (plus an empty first commit, if the plan
+doesn't make a real one immediately), then dispatch the rest of that task
+normally. This is a property of git worktrees, not something a plan should
+route around -- treat it the same as any other single-line/trivial exception.
+
+### Sequencing dependent tasks
+
+`-w` always bases a new worktree off `--workdir`'s *current* HEAD, not off
+another task's branch. If Task 2 depends on files Task 1 created,
+fast-forward-merge Task 1's branch into the main branch once its review is
+clean (`git merge --ff-only task-1`) before dispatching Task 2 -- otherwise
+Task 2's worktree is created from the pre-Task-1 state and won't have the
+files it depends on. Clean up the merged branch and worktree right after
+(`git worktree remove`, `git branch -d`).
+
+### Worktree isolation is a convention the agent follows, not a hard sandbox
+
+`prompts/implementer.md` and `prompts/fixer.md` both instruct the dispatched
+agent to treat any absolute repository path mentioned in its brief as
+descriptive context, never as a literal `cd` target -- because the agent
+runs with full shell access (`--force --trust`) and will otherwise follow a
+literal instruction in the brief (a plan authored for direct, non-isolated
+execution can easily contain a hardcoded `cd /path/to/repo && git commit`)
+right past the isolated worktree `-w` set up. That instruction is a prompt
+convention the model is asked to follow, not an enforced sandbox boundary.
+If a dispatch reports `DONE` but its target worktree branch shows no new
+commit, check `git reflog` on the main checkout -- the commit likely landed
+there instead.
+
 This table maps each superpowers dispatch point to the equivalent
 `cursor-dispatch` call.
 

@@ -9,6 +9,14 @@ Read the original task brief: [BRIEF_FILE]
 It contains the full task text from the plan -- the requirements the fix
 must still satisfy.
 
+**Stay in your own working directory.** You are already running inside the
+isolated worktree for this task. The brief may contain literal shell commands
+with an absolute path to the main repository checkout (plans are often
+written assuming direct, non-isolated execution). Treat any such path as
+descriptive context, never as a literal `cd` target: do not `cd` to it, and
+do not run git commands against it. Everything happens in your current
+directory exactly as it stands when you start.
+
 ## Reviewer Findings To Address
 
 [CONTEXT]

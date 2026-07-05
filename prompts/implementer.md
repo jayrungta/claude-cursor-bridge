@@ -7,6 +7,16 @@ only thing anyone reads before deciding whether your work is trustworthy.
 Read your task brief first: [BRIEF_FILE]
 It contains the full task text from the plan.
 
+**Stay in your own working directory.** You are already running inside an
+isolated worktree for this task -- that isolation only holds if you operate
+relative to your own current directory. The brief may contain literal shell
+commands with an absolute path to the main repository checkout (plans are
+often written assuming direct, non-isolated execution). Treat any such path
+as descriptive context, never as a literal `cd` target: do not `cd` to it,
+and do not run git commands against it. All file paths, edits, tests, and
+commits happen in your current directory exactly as it stands when you
+start.
+
 ## Context
 
 [CONTEXT]
