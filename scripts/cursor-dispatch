@@ -99,9 +99,33 @@ if ! git -C "$workdir" rev-parse --show-toplevel >/dev/null 2>&1; then
   blocked "workdir is not a git repository: $workdir (worktree isolation requires one)"
 fi
 
+# `agent -w` runs the prompt with cwd set to a fresh worktree under
+# ~/.cursor/worktrees/, not $workdir -- a relative brief/report/diff path
+# would not resolve there. Canonicalize to absolute paths so they resolve
+# regardless of which directory the agent process actually runs in.
+to_abs() {
+  local p=$1 d b
+  case "$p" in
+    /*) printf '%s\n' "$p"; return ;;
+  esac
+  d=$(dirname "$p")
+  b=$(basename "$p")
+  mkdir -p "$d"
+  printf '%s/%s\n' "$(cd "$d" && pwd)" "$b"
+}
+
+brief=$(to_abs "$brief")
+[ -n "$report" ] && report=$(to_abs "$report")
+[ -n "$diff" ] && diff=$(to_abs "$diff")
+workdir=$(cd "$workdir" && pwd)
+
 model=$("$here/resolve-model" "$tier") || blocked "could not resolve tier '$tier' to a model"
 
-prompt_template="$root/prompts/$role.md"
+case "$role" in
+  reviewer) template_name=task-reviewer ;;
+  *) template_name=$role ;;
+esac
+prompt_template="$root/prompts/$template_name.md"
 [ -f "$prompt_template" ] || blocked "no prompt template for role: $role ($prompt_template)"
 
 # --- Compose the prompt -----------------------------------------------------
@@ -116,9 +140,26 @@ prompt=${prompt//\[CONTEXT\]/${context:-none provided}}
 prompt=${prompt//\[WORKDIR\]/$workdir}
 
 # --- Run ---------------------------------------------------------------
+# `-w <slug>` always creates a brand-new worktree and errors if that name is
+# already taken. A fixer dispatch must continue in the SAME worktree an
+# earlier implementer dispatch created, not spin up another one -- so when
+# --workdir already points inside a linked worktree (its git-dir differs from
+# the repo's common git-dir), run there directly with no -w flag at all.
+# When --workdir is the main repo, -w creates the fresh isolated worktree as
+# usual (the implementer/reviewer first-dispatch case).
+git_dir=$(git -C "$workdir" rev-parse --git-dir)
+common_dir=$(git -C "$workdir" rev-parse --git-common-dir)
+worktree_args=(-w "$worktree")
+if [ "$git_dir" != "$common_dir" ]; then
+  worktree_args=()
+fi
 
 set +e
-raw=$(cd "$workdir" && agent -p --force --trust --model "$model" -w "$worktree" \
+# macOS ships bash 3.2, which treats "${arr[@]}" on an empty array as an
+# unbound variable under `set -u` -- the `+` parameter-expansion form below
+# avoids that.
+raw=$(cd "$workdir" && agent -p --force --trust --model "$model" \
+  ${worktree_args[@]+"${worktree_args[@]}"} \
   --output-format json "$prompt" 2>&1)
 status=$?
 set -e
@@ -127,7 +168,12 @@ if [ $status -ne 0 ]; then
   blocked "cursor-agent exited $status: $(echo "$raw" | tail -c 500)"
 fi
 
-result=$(echo "$raw" | python3 -c '
+# `agent -w` prints a "Using worktree: ..." notice on stdout before the JSON
+# result line when it creates a new worktree, so the JSON is not necessarily
+# the whole output -- pull out the result line specifically.
+json_line=$(echo "$raw" | grep -m1 '^{"type":"result"')
+
+result=$(echo "$json_line" | python3 -c '
 import json, sys
 try:
     obj = json.loads(sys.stdin.read())
