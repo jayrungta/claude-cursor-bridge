@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Resolve a cursor-bridge model tier (fast|standard|high) to a concrete
+# `cursor-agent --model` value. Reads config/models.env if present, falling
+# back to config/models.example.env, falling back to built-in defaults —
+# so cursor-dispatch never breaks if a user hasn't customized anything yet.
+#
+# Usage: resolve-model fast|standard|high
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: resolve-model fast|standard|high" >&2
+  exit 2
+fi
+
+tier=$1
+case "$tier" in
+  fast) var=TIER_FAST ;;
+  standard) var=TIER_STANDARD ;;
+  high) var=TIER_HIGH ;;
+  *)
+    echo "unknown tier: $tier (expected fast|standard|high)" >&2
+    exit 2
+    ;;
+esac
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# Built-in fallback defaults, used only if no config file defines the var.
+TIER_FAST=composer-2.5
+TIER_STANDARD=composer-2.5
+TIER_HIGH=gpt-5.5-high
+
+if [ -f "$root/config/models.env" ]; then
+  # shellcheck disable=SC1091
+  source "$root/config/models.env"
+elif [ -f "$root/config/models.example.env" ]; then
+  # shellcheck disable=SC1091
+  source "$root/config/models.example.env"
+fi
+
+echo "${!var}"

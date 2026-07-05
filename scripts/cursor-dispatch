@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# cursor-dispatch: run one role (implementer|reviewer|fixer) as a cursor-agent
+# process instead of a Claude Task-tool subagent. Speaks the same file-handoff
+# contract as superpowers' subagent-driven-development: a task brief goes in
+# as a file path, a report comes back as a file path, and only a short status
+# block (or, for reviewers, the full structured verdict) is printed back to
+# the caller. File contents are never pasted into this script's own output.
+#
+# Usage:
+#   cursor-dispatch --role implementer|reviewer|fixer --tier fast|standard|high \
+#     --brief <file> [--report <file>] [--diff <file>] [--context "<one-liner>"] \
+#     --workdir <repo> --worktree <slug>
+#
+# implementer/fixer require --report (the file they must write their report
+# to). reviewer does not use --report — its reply IS the report, matching the
+# convention in task-reviewer-prompt.md. reviewer requires --diff.
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$here/.." && pwd)
+
+role=""
+tier=""
+brief=""
+report=""
+diff=""
+context=""
+workdir=""
+worktree=""
+
+usage() {
+  echo "usage: cursor-dispatch --role implementer|reviewer|fixer --tier fast|standard|high --brief <file> [--report <file>] [--diff <file>] [--context <text>] --workdir <repo> --worktree <slug>" >&2
+  exit 2
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --role) role=$2; shift 2 ;;
+    --tier) tier=$2; shift 2 ;;
+    --brief) brief=$2; shift 2 ;;
+    --report) report=$2; shift 2 ;;
+    --diff) diff=$2; shift 2 ;;
+    --context) context=$2; shift 2 ;;
+    --workdir) workdir=$2; shift 2 ;;
+    --worktree) worktree=$2; shift 2 ;;
+    -h|--help) usage ;;
+    *) echo "unknown argument: $1" >&2; usage ;;
+  esac
+done
+
+blocked() {
+  # Emit a BLOCKED-shaped response so the controller's existing
+  # BLOCKED-handling logic (re-dispatch with more context, escalate, or fall
+  # back to a real Claude subagent) applies unchanged, whether the failure
+  # came from cursor-agent itself or from a preamble check here.
+  echo "Status: BLOCKED"
+  echo "Reason: $1"
+  exit 0
+}
+
+# --- Preamble checks -------------------------------------------------------
+
+case "$role" in
+  implementer|reviewer|fixer) ;;
+  "") echo "missing --role" >&2; usage ;;
+  *) echo "unknown --role: $role (expected implementer|reviewer|fixer)" >&2; usage ;;
+esac
+
+[ -n "$tier" ] || { echo "missing --tier" >&2; usage; }
+[ -n "$brief" ] || { echo "missing --brief" >&2; usage; }
+[ -n "$workdir" ] || { echo "missing --workdir" >&2; usage; }
+[ -n "$worktree" ] || { echo "missing --worktree" >&2; usage; }
+
+if [ "$role" != "reviewer" ] && [ -z "$report" ]; then
+  echo "missing --report (required for role=$role)" >&2
+  usage
+fi
+if [ "$role" = "reviewer" ] && [ -z "$diff" ]; then
+  echo "missing --diff (required for role=reviewer)" >&2
+  usage
+fi
+
+command -v agent >/dev/null 2>&1 || blocked "cursor-agent CLI not found on PATH (see README install steps)"
+
+if ! agent status >/dev/null 2>&1; then
+  blocked "cursor-agent is not logged in (run: agent login)"
+fi
+
+if [ ! -f "$brief" ]; then
+  blocked "brief file not found: $brief"
+fi
+if [ "$role" = "reviewer" ] && [ ! -f "$diff" ]; then
+  blocked "diff file not found: $diff"
+fi
+if [ ! -d "$workdir" ]; then
+  blocked "workdir not found: $workdir"
+fi
+if ! git -C "$workdir" rev-parse --show-toplevel >/dev/null 2>&1; then
+  blocked "workdir is not a git repository: $workdir (worktree isolation requires one)"
+fi
+
+model=$("$here/resolve-model" "$tier") || blocked "could not resolve tier '$tier' to a model"
+
+prompt_template="$root/prompts/$role.md"
+[ -f "$prompt_template" ] || blocked "no prompt template for role: $role ($prompt_template)"
+
+# --- Compose the prompt -----------------------------------------------------
+# Substitute file-path placeholders only. Never inline brief/report/diff
+# contents here -- that is the whole point of the file-handoff contract.
+
+prompt=$(cat "$prompt_template")
+prompt=${prompt//\[BRIEF_FILE\]/$brief}
+prompt=${prompt//\[REPORT_FILE\]/${report:-N\/A}}
+prompt=${prompt//\[DIFF_FILE\]/${diff:-N\/A}}
+prompt=${prompt//\[CONTEXT\]/${context:-none provided}}
+prompt=${prompt//\[WORKDIR\]/$workdir}
+
+# --- Run ---------------------------------------------------------------
+
+set +e
+raw=$(cd "$workdir" && agent -p --force --trust --model "$model" -w "$worktree" \
+  --output-format json "$prompt" 2>&1)
+status=$?
+set -e
+
+if [ $status -ne 0 ]; then
+  blocked "cursor-agent exited $status: $(echo "$raw" | tail -c 500)"
+fi
+
+result=$(echo "$raw" | python3 -c '
+import json, sys
+try:
+    obj = json.loads(sys.stdin.read())
+except Exception as e:
+    print("__PARSE_ERROR__: " + str(e))
+    sys.exit(0)
+if obj.get("is_error"):
+    print("__AGENT_ERROR__: " + str(obj.get("result", obj)))
+else:
+    print(obj.get("result", ""))
+')
+
+if [[ "$result" == __PARSE_ERROR__* ]]; then
+  blocked "could not parse cursor-agent JSON output: ${result#__PARSE_ERROR__: }"
+fi
+if [[ "$result" == __AGENT_ERROR__* ]]; then
+  blocked "cursor-agent reported an error: ${result#__AGENT_ERROR__: }"
+fi
+
+# implementer/reviewer/fixer all reply in the shape their prompt template
+# demands (short status block, or for reviewer the full structured verdict).
+# Print it verbatim -- this is the only output that reaches the controller.
+echo "$result"
