@@ -32,13 +32,15 @@ superpowers installed at all.
    ```
 2. Clone this repo and symlink it into Claude Code's skills directory:
    ```bash
-   git clone https://github.com/<you>/cursor-bridge.git ~/cursor-bridge
-   ln -s ~/cursor-bridge ~/.claude/skills/cursor-bridge
+   git clone https://github.com/<you>/claude-cursor-bridge.git ~/claude-cursor-bridge
+   ln -s ~/claude-cursor-bridge ~/.claude/skills/cursor-bridge
    ```
+   (The repo is named `claude-cursor-bridge`; the skill itself is invoked as
+   `cursor-bridge` -- the symlink name above is what Claude Code reads.)
 3. (Optional) customize model tiers:
    ```bash
-   cp ~/cursor-bridge/config/models.example.env ~/cursor-bridge/config/models.env
-   $EDITOR ~/cursor-bridge/config/models.env
+   cp ~/claude-cursor-bridge/config/models.example.env ~/claude-cursor-bridge/config/models.env
+   $EDITOR ~/claude-cursor-bridge/config/models.env
    ```
    List what's available to you with `agent --list-models`.
 4. Add the routing rule below to your `CLAUDE.md` (global `~/.claude/CLAUDE.md`
