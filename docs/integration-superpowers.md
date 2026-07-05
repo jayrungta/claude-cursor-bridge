@@ -49,6 +49,25 @@ cursor-dispatch --role reviewer --tier high \
   --workdir "$(git rev-parse --show-toplevel)" --worktree task-3-review
 ```
 
+## Fixer dispatch: reuse the implementer's worktree
+
+A fix pass must continue in the *same* worktree the implementer already
+built on, not spin up a fresh one -- `cursor-dispatch` detects this
+automatically: pass `--workdir` as that worktree's own path (not the main
+repo) and it skips `-w` entirely instead of erroring on a name collision.
+
+```bash
+task_worktree="$HOME/.cursor/worktrees/$(basename "$(git rev-parse --show-toplevel)")/task-3"
+
+cursor-dispatch --role fixer --tier fast \
+  --brief "$ws/task-3-brief.md" --report "$ws/task-3-fix-report.md" \
+  --context "$(cat reviewer-findings.txt)" \
+  --workdir "$task_worktree" --worktree task-3
+```
+
+(`--worktree` is still required by the CLI for consistency, but its value is
+ignored whenever `--workdir` already resolves to a linked worktree.)
+
 The reviewer's full structured reply is `cursor-dispatch`'s only output --
 print it to the controller as-is, exactly like a Task-tool reviewer
 subagent's final message.

@@ -45,6 +45,9 @@ scripts/cursor-dispatch --role implementer|reviewer|fixer --tier fast|standard|h
   the report itself, no separate file).
 - Every dispatch runs inside an isolated Cursor-managed git worktree
   (`~/.cursor/worktrees/<repo>/<slug>`), never the working tree directly.
+  Exception: if `--workdir` already points inside a linked worktree (e.g. a
+  `fixer` continuing the same task an `implementer` dispatch started), the
+  script runs there directly instead of creating another one.
 - On any failure (CLI missing, not logged in, bad JSON, non-zero exit), the
   script prints a `Status: BLOCKED` response instead of erroring out, so a
   controller's existing BLOCKED-handling logic applies unchanged.
