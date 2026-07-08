@@ -9,13 +9,7 @@ Read the original task brief: [BRIEF_FILE]
 It contains the full task text from the plan -- the requirements the fix
 must still satisfy.
 
-**Stay in your own working directory.** You are already running inside the
-isolated worktree for this task. The brief may contain literal shell commands
-with an absolute path to the main repository checkout (plans are often
-written assuming direct, non-isolated execution). Treat any such path as
-descriptive context, never as a literal `cd` target: do not `cd` to it, and
-do not run git commands against it. Everything happens in your current
-directory exactly as it stands when you start.
+**Working directory.** [ISOLATION_NOTE]
 
 ## Reviewer Findings To Address
 
@@ -33,7 +27,8 @@ references you must work through.)
    use this pass to also refactor or improve unrelated code.
 3. Re-run the tests that cover the amended code (the reviewer will not re-run
    tests for you -- your report is the evidence).
-4. Commit your fixes.
+4. Commit your fixes (skip if your working directory isn't a git repository
+   -- see the working-directory note above).
 5. Self-review (see below).
 6. Report back.
 
@@ -73,7 +68,8 @@ Write your full report to [REPORT_FILE]:
 
 Then reply with ONLY (under 15 lines -- the detail lives in the report file):
 - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-- Commits created (short SHA + subject)
+- Commits created (short SHA + subject), or "none -- not a git repository"
+  if [WORKDIR] isn't one
 - One-line test summary
 - Findings NOT fully resolved, if any
 - The report file path: [REPORT_FILE]

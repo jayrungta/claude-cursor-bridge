@@ -52,18 +52,19 @@ superpowers installed at all.
 ```markdown
 ## cursor-bridge
 For all code implementation (writing, editing, or refactoring source code;
-fixing bugs; writing tests) in a git repository, delegate to the
-`cursor-bridge` skill instead of writing code directly -- whether the request
-comes from direct chat or from within a superpowers flow
+fixing bugs; writing tests) and other mechanical execution work (batch file
+operations, running one-off commands, media/data processing) -- whether or
+not the target directory is a git repository -- delegate to the
+`cursor-bridge` skill instead of doing it directly, whether the request comes
+from direct chat or from within a superpowers flow
 (`subagent-driven-development`, `dispatching-parallel-agents`,
-`executing-plans`, TDD cycles). Never write application code yourself when
+`executing-plans`, TDD cycles). Never do this kind of work yourself when
 `cursor-bridge` can do it.
 
 Exceptions -- handle directly:
 - Single-line/trivial fixes (typos, config/env tweaks, renames)
 - Non-code work: planning, research, docs, memory/CLAUDE.md updates, git
   operations, running existing tests/builds, answering questions
-- No git repo present (delegation requires a worktree)
 - You're explicitly asked to write the code yourself
 
 Always keep on Claude: planning, the progress ledger, task-brief authoring,
@@ -88,8 +89,11 @@ scripts/cursor-dispatch --role implementer|reviewer|fixer --tier fast|standard|h
   the detailed report lives in the file, written by the agent itself.
 - `reviewer`: pass `--diff <file>` instead. The command's full output IS the
   review -- there's no separate report file for this role.
-- Every dispatch runs in an isolated Cursor-managed git worktree
-  (`~/.cursor/worktrees/<repo>/<slug>`) -- never your working tree directly.
+- If `--workdir` is a git repository, every dispatch runs in an isolated
+  Cursor-managed git worktree (`~/.cursor/worktrees/<repo>/<slug>`) -- never
+  your working tree directly. If it isn't a git repository, `implementer`/
+  `fixer` still run, directly in that directory (no isolation, no
+  branch/commit safety net) -- `reviewer` always requires git.
 - Any failure (CLI missing, not logged in, bad JSON, non-zero exit) prints a
   `Status: BLOCKED` line instead of erroring, so a controller can react to it
   the same way it reacts to a stuck Task-tool subagent.

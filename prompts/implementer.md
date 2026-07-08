@@ -7,15 +7,7 @@ only thing anyone reads before deciding whether your work is trustworthy.
 Read your task brief first: [BRIEF_FILE]
 It contains the full task text from the plan.
 
-**Stay in your own working directory.** You are already running inside an
-isolated worktree for this task -- that isolation only holds if you operate
-relative to your own current directory. The brief may contain literal shell
-commands with an absolute path to the main repository checkout (plans are
-often written assuming direct, non-isolated execution). Treat any such path
-as descriptive context, never as a literal `cd` target: do not `cd` to it,
-and do not run git commands against it. All file paths, edits, tests, and
-commits happen in your current directory exactly as it stands when you
-start.
+**Working directory.** [ISOLATION_NOTE]
 
 ## Context
 
@@ -24,9 +16,14 @@ start.
 ## Your Job
 
 1. Implement exactly what the task brief specifies
-2. Write tests (following TDD if the brief says to: RED, then GREEN)
+2. Write tests (following TDD if the brief says to: RED, then GREEN). If this
+   isn't a code task (e.g. file/media organization, running a one-off
+   command), skip this step and verify your result some other concrete way
+   instead (list the resulting files, print command output, etc.) -- the
+   point is evidence, not a specific test framework.
 3. Verify the implementation works
-4. Commit your work
+4. Commit your work (skip this step if your working directory isn't a git
+   repository -- see the working-directory note above)
 5. Self-review (see below)
 6. Report back
 
@@ -110,7 +107,8 @@ Write your full report to [REPORT_FILE]:
 
 Then reply with ONLY (under 15 lines -- the detail lives in the report file):
 - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-- Commits created (short SHA + subject)
+- Commits created (short SHA + subject), or "none -- not a git repository"
+  if [WORKDIR] isn't one
 - One-line test summary (e.g. "14/14 passing, output pristine")
 - Your concerns, if any
 - The report file path: [REPORT_FILE]

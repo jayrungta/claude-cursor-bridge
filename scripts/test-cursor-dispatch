@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Integration tests for cursor-dispatch preamble and worktree-args logic.
+# Mocks the `agent` CLI so tests run without a Cursor login.
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$here/.." && pwd)
+dispatch="$here/cursor-dispatch"
+
+pass=0
+fail=0
+
+assert_contains() {
+  local label=$1 haystack=$2 needle=$3
+  if [[ "$haystack" == *"$needle"* ]]; then
+    echo "PASS: $label"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $label (expected output to contain: $needle)" >&2
+    echo "  got: $haystack" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+assert_not_contains() {
+  local label=$1 haystack=$2 needle=$3
+  if [[ "$haystack" != *"$needle"* ]]; then
+    echo "PASS: $label"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $label (expected output NOT to contain: $needle)" >&2
+    echo "  got: $haystack" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+assert_exit() {
+  local label=$1 expected=$2 actual=$3
+  if [ "$expected" -eq "$actual" ]; then
+    echo "PASS: $label"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $label (expected exit $expected, got $actual)" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+setup() {
+  tmp=$(mktemp -d)
+  bin="$tmp/bin"
+  mkdir -p "$bin" "$tmp/nogit" "$tmp/git-repo"
+  git -C "$tmp/git-repo" init -q
+  git -C "$tmp/git-repo" config user.email test@example.com
+  git -C "$tmp/git-repo" config user.name test
+  echo "brief body" > "$tmp/brief.md"
+  echo "diff body" > "$tmp/diff.md"
+  echo "report placeholder" > "$tmp/report.md"
+  agent_log="$tmp/agent-args.log"
+  : > "$agent_log"
+
+  cat > "$bin/agent" << EOF
+#!/usr/bin/env bash
+if [ "\$1" = "status" ]; then exit 0; fi
+printf '%s\n' "\$*" >> "$agent_log"
+echo '{"type":"result","is_error":false,"result":"Status: DONE"}'
+EOF
+  chmod +x "$bin/agent"
+  export PATH="$bin:$PATH"
+}
+
+teardown() {
+  rm -rf "$tmp"
+}
+
+run_dispatch() {
+  "$dispatch" "$@" 2>&1
+}
+
+echo "== bash -n syntax check =="
+if bash -n "$dispatch"; then
+  echo "PASS: bash -n cursor-dispatch"
+  pass=$((pass + 1))
+else
+  echo "FAIL: bash -n cursor-dispatch" >&2
+  fail=$((fail + 1))
+fi
+
+setup
+trap teardown EXIT
+
+echo ""
+echo "== reviewer + non-git workdir blocks =="
+out=$(run_dispatch --role reviewer --tier fast \
+  --brief "$tmp/brief.md" --diff "$tmp/diff.md" \
+  --workdir "$tmp/nogit" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "reviewer non-git exits 0 (BLOCKED contract)" 0 "$exit_code"
+assert_contains "reviewer non-git returns BLOCKED" "$out" "Status: BLOCKED"
+assert_contains "reviewer non-git mentions reviewer needs git" "$out" "reviewer needs a diff"
+
+echo ""
+echo "== implementer + non-git workdir proceeds without -w =="
+: > "$agent_log"
+out=$(run_dispatch --role implementer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/nogit" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "implementer non-git exits 0" 0 "$exit_code"
+assert_contains "implementer non-git returns DONE" "$out" "Status: DONE"
+agent_args=$(cat "$agent_log")
+assert_not_contains "implementer non-git omits -w flag" "$agent_args" " -w "
+
+echo ""
+echo "== fixer + non-git workdir proceeds without -w =="
+: > "$agent_log"
+out=$(run_dispatch --role fixer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/nogit" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "fixer non-git exits 0" 0 "$exit_code"
+assert_contains "fixer non-git returns DONE" "$out" "Status: DONE"
+agent_args=$(cat "$agent_log")
+assert_not_contains "fixer non-git omits -w flag" "$agent_args" " -w "
+
+echo ""
+echo "== implementer + git workdir passes -w =="
+: > "$agent_log"
+out=$(run_dispatch --role implementer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/git-repo" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "implementer git exits 0" 0 "$exit_code"
+assert_contains "implementer git returns DONE" "$out" "Status: DONE"
+agent_args=$(cat "$agent_log")
+assert_contains "implementer git includes -w flag" "$agent_args" "-w test-slug"
+
+echo ""
+echo "== ISOLATION_NOTE substitution in non-git prompt =="
+: > "$agent_log"
+run_dispatch --role implementer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/nogit" --worktree test-slug >/dev/null
+prompt_line=$(grep -o 'not a git repository' "$agent_log" || true)
+assert_contains "non-git prompt mentions not a git repository" "$prompt_line" "not a git repository"
+
+echo ""
+echo "== summary =="
+echo "$pass passed, $fail failed"
+if [ "$fail" -gt 0 ]; then
+  exit 1
+fi

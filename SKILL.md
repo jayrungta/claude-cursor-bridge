@@ -1,6 +1,6 @@
 ---
 name: cursor-bridge
-description: Delegate code implementation, review, and fix work to the Cursor CLI (agent) instead of a Claude Task-tool subagent, to keep Claude's own context/token usage for planning and judgment. Use for any implementation, review, or fix dispatch in a git repository -- standalone, or as the execution backend for superpowers' subagent-driven-development, dispatching-parallel-agents, and executing-plans.
+description: Delegate code implementation, review, and fix work to the Cursor CLI (agent) instead of a Claude Task-tool subagent, to keep Claude's own context/token usage for planning and judgment. Use for any implementation or fix dispatch (git repo or plain directory); review dispatch requires git, since it reviews a diff -- standalone, or as the execution backend for superpowers' subagent-driven-development, dispatching-parallel-agents, and executing-plans.
 ---
 
 # cursor-bridge
@@ -43,11 +43,16 @@ scripts/cursor-dispatch --role implementer|reviewer|fixer --tier fast|standard|h
 - `reviewer` requires `--diff` instead of `--report` -- its reply IS the
   report (matches the convention that a reviewer subagent's final message is
   the report itself, no separate file).
-- Every dispatch runs inside an isolated Cursor-managed git worktree
-  (`~/.cursor/worktrees/<repo>/<slug>`), never the working tree directly.
-  Exception: if `--workdir` already points inside a linked worktree (e.g. a
-  `fixer` continuing the same task an `implementer` dispatch started), the
-  script runs there directly instead of creating another one.
+- If `--workdir` is a git repository, every dispatch runs inside an isolated
+  Cursor-managed git worktree (`~/.cursor/worktrees/<repo>/<slug>`), never the
+  working tree directly. Exception: if `--workdir` already points inside a
+  linked worktree (e.g. a `fixer` continuing the same task an `implementer`
+  dispatch started), the script runs there directly instead of creating
+  another one.
+- If `--workdir` is NOT a git repository, `implementer`/`fixer` dispatches
+  still run -- directly in that directory, with no worktree isolation and no
+  branch/commit safety net. `reviewer` requires git (it reviews a diff) and
+  will report BLOCKED in a non-git directory.
 - On any failure (CLI missing, not logged in, bad JSON, non-zero exit), the
   script prints a `Status: BLOCKED` response instead of erroring out, so a
   controller's existing BLOCKED-handling logic applies unchanged.
@@ -95,7 +100,6 @@ judgment calls.
 - The task needs Claude's own judgment: planning, the progress ledger,
   answering a dispatched agent's questions, deciding what BLOCKED means next.
 - Single-line/trivial fixes -- delegating costs more than doing it directly.
-- No git repo present (worktree isolation requires one).
 - `cursor-dispatch` reports BLOCKED twice on the same task, or the task needs
   deep repo-wide architectural reasoning -- fall back to a real Claude
   subagent for that one task.

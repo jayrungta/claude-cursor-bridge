@@ -95,8 +95,14 @@ fi
 if [ ! -d "$workdir" ]; then
   blocked "workdir not found: $workdir"
 fi
+
+is_git_repo=true
 if ! git -C "$workdir" rev-parse --show-toplevel >/dev/null 2>&1; then
-  blocked "workdir is not a git repository: $workdir (worktree isolation requires one)"
+  is_git_repo=false
+fi
+
+if [ "$role" = "reviewer" ] && [ "$is_git_repo" = false ]; then
+  blocked "workdir is not a git repository: $workdir (reviewer needs a diff, which requires git; use implementer/fixer for non-git directories)"
 fi
 
 # `agent -w` runs the prompt with cwd set to a fresh worktree under
@@ -139,6 +145,13 @@ prompt=${prompt//\[DIFF_FILE\]/${diff:-N\/A}}
 prompt=${prompt//\[CONTEXT\]/${context:-none provided}}
 prompt=${prompt//\[WORKDIR\]/$workdir}
 
+if [ "$is_git_repo" = true ]; then
+  isolation_note='You are running inside an isolated git worktree created for this task alone -- that isolation only holds if you operate relative to your own current directory. The brief may contain literal shell commands with an absolute path to the main repository checkout (plans are often written assuming direct, non-isolated execution). Treat any such path as descriptive context, never as a literal `cd` target: do not `cd` to it, and do not run git commands against it. All file paths, edits, tests, and commits happen in your current directory exactly as it stands when you start.'
+else
+  isolation_note="This directory ($workdir) is not a git repository, so there is no isolated worktree and no branch/commit safety net -- you are working directly on the real files there. Make only the changes the brief calls for. Do not run \`git init\` or any other git command unless the brief explicitly asks you to."
+fi
+prompt=${prompt//\[ISOLATION_NOTE\]/$isolation_note}
+
 # --- Run ---------------------------------------------------------------
 # `-w <slug>` always creates a brand-new worktree and errors if that name is
 # already taken. A fixer dispatch must continue in the SAME worktree an
@@ -147,10 +160,14 @@ prompt=${prompt//\[WORKDIR\]/$workdir}
 # the repo's common git-dir), run there directly with no -w flag at all.
 # When --workdir is the main repo, -w creates the fresh isolated worktree as
 # usual (the implementer/reviewer first-dispatch case).
-git_dir=$(git -C "$workdir" rev-parse --git-dir)
-common_dir=$(git -C "$workdir" rev-parse --git-common-dir)
 worktree_args=(-w "$worktree")
-if [ "$git_dir" != "$common_dir" ]; then
+if [ "$is_git_repo" = true ]; then
+  git_dir=$(git -C "$workdir" rev-parse --git-dir)
+  common_dir=$(git -C "$workdir" rev-parse --git-common-dir)
+  if [ "$git_dir" != "$common_dir" ]; then
+    worktree_args=()
+  fi
+else
   worktree_args=()
 fi
 
