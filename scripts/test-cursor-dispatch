@@ -139,6 +139,47 @@ agent_args=$(cat "$agent_log")
 assert_contains "implementer git includes -w flag" "$agent_args" "-w test-slug"
 
 echo ""
+echo "== agent success without result JSON line returns BLOCKED =="
+: > "$agent_log"
+cat > "$bin/agent" << EOF
+#!/usr/bin/env bash
+if [ "\$1" = "status" ]; then exit 0; fi
+printf '%s\n' "\$*" >> "$agent_log"
+echo "no json here, just plain text"
+EOF
+chmod +x "$bin/agent"
+out=$(run_dispatch --role implementer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/git-repo" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "missing result line exits 0 (BLOCKED contract)" 0 "$exit_code"
+assert_contains "missing result line returns BLOCKED" "$out" "Status: BLOCKED"
+assert_contains "missing result line mentions no result" "$out" 'no {"type":"result"'
+
+# Restore default mock agent for remaining tests
+cat > "$bin/agent" << EOF
+#!/usr/bin/env bash
+if [ "\$1" = "status" ]; then exit 0; fi
+printf '%s\n' "\$*" >> "$agent_log"
+echo '{"type":"result","is_error":false,"result":"Status: DONE"}'
+EOF
+chmod +x "$bin/agent"
+
+echo ""
+echo "== fresh worktree prompt uses workdir description not main repo path =="
+: > "$agent_log"
+out=$(run_dispatch --role implementer --tier fast \
+  --brief "$tmp/brief.md" --report "$tmp/report.md" \
+  --workdir "$tmp/git-repo" --worktree test-slug; echo exit:$?)
+exit_code=${out##*exit:}
+out=${out%exit:*}
+assert_exit "fresh worktree implementer exits 0" 0 "$exit_code"
+agent_args=$(cat "$agent_log")
+assert_not_contains "fresh worktree prompt omits main repo path" "$agent_args" "Work from: $tmp/git-repo"
+assert_contains "fresh worktree prompt uses workdir description" "$agent_args" "Work from: your current working directory (an isolated git worktree created for this task)"
+
+echo ""
 echo "== ISOLATION_NOTE substitution in non-git prompt =="
 : > "$agent_log"
 run_dispatch --role implementer --tier fast \

@@ -35,14 +35,14 @@ usage() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --role) role=$2; shift 2 ;;
-    --tier) tier=$2; shift 2 ;;
-    --brief) brief=$2; shift 2 ;;
-    --report) report=$2; shift 2 ;;
-    --diff) diff=$2; shift 2 ;;
-    --context) context=$2; shift 2 ;;
-    --workdir) workdir=$2; shift 2 ;;
-    --worktree) worktree=$2; shift 2 ;;
+    --role) [ $# -ge 2 ] || { echo "missing value for --role" >&2; usage; }; role=$2; shift 2 ;;
+    --tier) [ $# -ge 2 ] || { echo "missing value for --tier" >&2; usage; }; tier=$2; shift 2 ;;
+    --brief) [ $# -ge 2 ] || { echo "missing value for --brief" >&2; usage; }; brief=$2; shift 2 ;;
+    --report) [ $# -ge 2 ] || { echo "missing value for --report" >&2; usage; }; report=$2; shift 2 ;;
+    --diff) [ $# -ge 2 ] || { echo "missing value for --diff" >&2; usage; }; diff=$2; shift 2 ;;
+    --context) [ $# -ge 2 ] || { echo "missing value for --context" >&2; usage; }; context=$2; shift 2 ;;
+    --workdir) [ $# -ge 2 ] || { echo "missing value for --workdir" >&2; usage; }; workdir=$2; shift 2 ;;
+    --worktree) [ $# -ge 2 ] || { echo "missing value for --worktree" >&2; usage; }; worktree=$2; shift 2 ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
   esac
@@ -134,25 +134,7 @@ esac
 prompt_template="$root/prompts/$template_name.md"
 [ -f "$prompt_template" ] || blocked "no prompt template for role: $role ($prompt_template)"
 
-# --- Compose the prompt -----------------------------------------------------
-# Substitute file-path placeholders only. Never inline brief/report/diff
-# contents here -- that is the whole point of the file-handoff contract.
-
-prompt=$(cat "$prompt_template")
-prompt=${prompt//\[BRIEF_FILE\]/$brief}
-prompt=${prompt//\[REPORT_FILE\]/${report:-N\/A}}
-prompt=${prompt//\[DIFF_FILE\]/${diff:-N\/A}}
-prompt=${prompt//\[CONTEXT\]/${context:-none provided}}
-prompt=${prompt//\[WORKDIR\]/$workdir}
-
-if [ "$is_git_repo" = true ]; then
-  isolation_note='You are running inside an isolated git worktree created for this task alone -- that isolation only holds if you operate relative to your own current directory. The brief may contain literal shell commands with an absolute path to the main repository checkout (plans are often written assuming direct, non-isolated execution). Treat any such path as descriptive context, never as a literal `cd` target: do not `cd` to it, and do not run git commands against it. All file paths, edits, tests, and commits happen in your current directory exactly as it stands when you start.'
-else
-  isolation_note="This directory ($workdir) is not a git repository, so there is no isolated worktree and no branch/commit safety net -- you are working directly on the real files there. Make only the changes the brief calls for. Do not run \`git init\` or any other git command unless the brief explicitly asks you to."
-fi
-prompt=${prompt//\[ISOLATION_NOTE\]/$isolation_note}
-
-# --- Run ---------------------------------------------------------------
+# --- Worktree args (needed before prompt composition for [WORKDIR]) ---------
 # `-w <slug>` always creates a brand-new worktree and errors if that name is
 # already taken. A fixer dispatch must continue in the SAME worktree an
 # earlier implementer dispatch created, not spin up another one -- so when
@@ -171,6 +153,31 @@ else
   worktree_args=()
 fi
 
+if [ "$is_git_repo" = true ] && [ ${#worktree_args[@]} -gt 0 ]; then
+  workdir_display="your current working directory (an isolated git worktree created for this task)"
+else
+  workdir_display="$workdir"
+fi
+
+# --- Compose the prompt -----------------------------------------------------
+# Substitute file-path placeholders only. Never inline brief/report/diff
+# contents here -- that is the whole point of the file-handoff contract.
+
+prompt=$(cat "$prompt_template")
+prompt=${prompt//\[BRIEF_FILE\]/$brief}
+prompt=${prompt//\[REPORT_FILE\]/${report:-N\/A}}
+prompt=${prompt//\[DIFF_FILE\]/${diff:-N\/A}}
+prompt=${prompt//\[CONTEXT\]/${context:-none provided}}
+prompt=${prompt//\[WORKDIR\]/$workdir_display}
+
+if [ "$is_git_repo" = true ]; then
+  isolation_note='You are running inside an isolated git worktree created for this task alone -- that isolation only holds if you operate relative to your own current directory. The brief may contain literal shell commands with an absolute path to the main repository checkout (plans are often written assuming direct, non-isolated execution). Treat any such path as descriptive context, never as a literal `cd` target: do not `cd` to it, and do not run git commands against it. All file paths, edits, tests, and commits happen in your current directory exactly as it stands when you start.'
+else
+  isolation_note="This directory ($workdir) is not a git repository, so there is no isolated worktree and no branch/commit safety net -- you are working directly on the real files there. Make only the changes the brief calls for. Do not run \`git init\` or any other git command unless the brief explicitly asks you to."
+fi
+prompt=${prompt//\[ISOLATION_NOTE\]/$isolation_note}
+
+# --- Run ---------------------------------------------------------------
 set +e
 # macOS ships bash 3.2, which treats "${arr[@]}" on an empty array as an
 # unbound variable under `set -u` -- the `+` parameter-expansion form below
@@ -188,7 +195,10 @@ fi
 # `agent -w` prints a "Using worktree: ..." notice on stdout before the JSON
 # result line when it creates a new worktree, so the JSON is not necessarily
 # the whole output -- pull out the result line specifically.
-json_line=$(echo "$raw" | grep -m1 '^{"type":"result"')
+json_line=$(echo "$raw" | grep -m1 '^{"type":"result"' || true)
+if [ -z "$json_line" ]; then
+  blocked "cursor-agent produced no {\"type\":\"result\"...} line: $(echo "$raw" | tail -c 500)"
+fi
 
 result=$(echo "$json_line" | python3 -c '
 import json, sys
