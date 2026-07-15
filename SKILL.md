@@ -91,7 +91,7 @@ turn. No separate mechanism needed -- see the README for the exact pattern.
 
 Tiers are resolved by `scripts/resolve-model` from `config/models.env` (copy
 `config/models.example.env` to create it). Built-in defaults: `fast` and
-`standard` -> `composer-2.5`, `high` -> `gpt-5.5-high`. Use `fast`/`standard`
+`standard` -> `composer-2.5`, `high` -> `gpt-5.6-sol-high`. Use `fast`/`standard`
 for implementation, `high` for review and for architecture-adjacent
 judgment calls.
 

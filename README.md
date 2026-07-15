@@ -109,7 +109,7 @@ including how to source brief/diff files from that plugin's own
 |---|---|---|
 | `fast` | `composer-2.5` | Mechanical, well-specified, 1-2 file tasks |
 | `standard` | `composer-2.5` | Multi-file coordination, integration work |
-| `high` | `gpt-5.5-high` | Review, and any judgment-heavy task |
+| `high` | `gpt-5.6-sol-high` | Review, and any judgment-heavy task |
 
 Override any of these in `config/models.env` (git-ignored; copy from
 `config/models.example.env`). Model names drift over time -- this file is the

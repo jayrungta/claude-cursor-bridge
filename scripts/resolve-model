@@ -28,7 +28,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # Built-in fallback defaults, used only if no config file defines the var.
 TIER_FAST=composer-2.5
 TIER_STANDARD=composer-2.5
-TIER_HIGH=gpt-5.5-high
+TIER_HIGH=gpt-5.6-sol-high
 
 if [ -f "$root/config/models.env" ]; then
   # shellcheck disable=SC1091
