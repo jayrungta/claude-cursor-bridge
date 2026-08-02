@@ -87,6 +87,18 @@ report/diff file paths that skill's own scripts (`task-brief`,
 Bash tool's `run_in_background: true`, one per independent task, in a single
 turn. No separate mechanism needed -- see the README for the exact pattern.
 
+**Watchdog every dispatch (2026-08-02 -- a `cursor-agent` once sat 37 min
+with zero file writes while being reported "in progress"):**
+- Liveness = a bracketed match of the actual binary path
+  (`ps -eo command | grep -c '[c]ursor-agent'`) -- never `pgrep -f <name>`
+  or any pattern that appears in the watcher's own command line; those
+  self-match and never report done.
+- Progress = file mtimes advancing in the report/worktree, not process
+  existence. A live process writing nothing for many minutes is wedged.
+- Every dispatch gets a wall-clock budget from the last comparable run
+  (~2x it = hung -> kill, check partial output, retry another tier or fall
+  back per the fallback chain). Never wait open-ended on a dispatch.
+
 ## Model tiers
 
 Tiers are resolved by `scripts/resolve-model` from `config/models.env` (copy
